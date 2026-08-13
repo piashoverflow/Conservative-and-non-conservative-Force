@@ -1,0 +1,6 @@
+{
+  "name": "Conservative vs. Non-Conservative Forces Lab",
+  "description": "Interactive Physics Simulation & Mathematical Proof Solver for Conservative and Non-Conservative Forces (HSC Standard)",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
