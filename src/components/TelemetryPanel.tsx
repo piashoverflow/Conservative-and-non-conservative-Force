@@ -8,6 +8,7 @@ import {
   ArrowRightLeft,
   Ruler,
   Zap,
+  GraduationCap,
 } from 'lucide-react';
 import { ForceCategory, Language, TelemetryState, ForceAnalysis } from '../types';
 
@@ -16,6 +17,7 @@ interface TelemetryPanelProps {
   forceCategory: ForceCategory;
   telemetry: TelemetryState;
   forceAnalysis: ForceAnalysis;
+  onOpenMathProof?: () => void;
   theme?: 'dark' | 'light';
 }
 
@@ -24,6 +26,7 @@ const TelemetryPanelComponent: React.FC<TelemetryPanelProps> = ({
   forceCategory,
   telemetry,
   forceAnalysis,
+  onOpenMathProof,
   theme = 'dark',
 }) => {
   const isDark = theme === 'dark';
@@ -216,6 +219,21 @@ const TelemetryPanelComponent: React.FC<TelemetryPanelProps> = ({
         </span>
         <span className={`font-extrabold ${isDark ? 'text-slate-200' : 'text-slate-950'}`}>{distanceTraveled.toFixed(2)} m</span>
       </div>
+
+      {/* 5. Optional Step-by-Step Math Proof Button */}
+      {onOpenMathProof && (
+        <button
+          onClick={onOpenMathProof}
+          className={`w-full py-2.5 px-3 rounded-xl border flex items-center justify-center gap-2 text-xs font-extrabold transition-all shadow-sm active:scale-95 ${
+            isDark
+              ? 'bg-purple-950/40 hover:bg-purple-900/60 text-purple-300 border-purple-500/40 hover:border-purple-400'
+              : 'bg-purple-50 hover:bg-purple-100 text-purple-900 border-purple-300 hover:border-purple-400'
+          }`}
+        >
+          <GraduationCap className="w-4 h-4 text-purple-500" />
+          <span>{lang === 'bn' ? 'ধাপভিত্তিক গাণিতিক প্রমাণ দেখুন' : 'View Step-by-Step Proof (∇ × F)'}</span>
+        </button>
+      )}
     </div>
   );
 };

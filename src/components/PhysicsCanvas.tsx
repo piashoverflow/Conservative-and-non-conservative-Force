@@ -9,6 +9,8 @@ import {
   Info,
   Layers,
   Sparkles,
+  Maximize2,
+  Minimize2,
 } from 'lucide-react';
 import { ForceCategory, Language, Point2D, SimulationParams, TelemetryState, Vector2D } from '../types';
 import { calculateForceVector, getPointOnPath } from '../utils/physicsEngine';
@@ -31,6 +33,8 @@ interface PhysicsCanvasProps {
   setPointB: (pt: Point2D) => void;
   pointC: Point2D;
   setPointC: (pt: Point2D) => void;
+  isLargeCanvas?: boolean;
+  onToggleLargeCanvas?: () => void;
   theme?: 'dark' | 'light';
 }
 
@@ -52,6 +56,8 @@ const PhysicsCanvasComponent: React.FC<PhysicsCanvasProps> = ({
   setPointB,
   pointC,
   setPointC,
+  isLargeCanvas = false,
+  onToggleLargeCanvas,
   theme = 'dark',
 }) => {
   const isDark = theme === 'dark';
@@ -154,19 +160,184 @@ const PhysicsCanvasComponent: React.FC<PhysicsCanvasProps> = ({
       ctx.fillText('(0,0)', x0 + 6, y0 + 16);
     }
 
-    // 2. Draw Potential Energy Contour Map (if enabled)
+    // 2. Draw Potential Energy Contour Map & Gradient Field (if enabled)
     if (params.showPotentialMap) {
-      const stepSize = 16;
-      for (let px = 0; px < width; px += stepSize) {
-        for (let py = 0; py < height; py += stepSize) {
-          const physPt = toPhysicalCoords(px + stepSize / 2, py + stepSize / 2, width, height);
-          const { potentialEnergy } = calculateForceVector(forceCategory, physPt, { x: 0, y: 0 }, params);
+      const isConservative =
+        forceCategory === 'gravity' ||
+        forceCategory === 'spring' ||
+        forceCategory === 'coulomb' ||
+        forceCategory === 'electrostatic' ||
+        forceCategory === 'buoyant';
 
-          // Map energy to color intensity
-          const normU = Math.min(1, Math.max(0, potentialEnergy / 150));
-          ctx.fillStyle = `rgba(168, 85, 247, ${normU * 0.25})`;
-          ctx.fillRect(px, py, stepSize, stepSize);
+      if (isConservative) {
+        ctx.save();
+
+        // A. Gravity: Horizontal Equipotential Isolines y = const (U = m*g*y)
+        if (forceCategory === 'gravity') {
+          const yLevels = [-8, -6, -4, -2, 0, 2, 4, 6, 8];
+          yLevels.forEach((yPhys) => {
+            const cy = y0 - yPhys * scale;
+            if (cy >= 0 && cy <= height) {
+              const uVal = params.mass * params.gravity * yPhys;
+              ctx.strokeStyle = isDark ? 'rgba(168, 85, 247, 0.45)' : 'rgba(147, 51, 234, 0.4)';
+              ctx.lineWidth = 1.5;
+              ctx.setLineDash([6, 5]);
+              ctx.beginPath();
+              ctx.moveTo(0, cy);
+              ctx.lineTo(width, cy);
+              ctx.stroke();
+
+              // Contour label badge
+              ctx.fillStyle = isDark ? 'rgba(216, 180, 254, 0.95)' : 'rgba(107, 33, 168, 0.95)';
+              ctx.font = 'bold 10px JetBrains Mono, monospace';
+              const sign = uVal > 0 ? '+' : '';
+              ctx.fillText(`U = ${sign}${uVal.toFixed(0)} J`, 16, cy - 4);
+            }
+          });
+
+          // Draw small force field gradient arrows F = -m*g*j pointing DOWN
+          ctx.setLineDash([]);
+          const arrowSpacing = scale * 3.5;
+          ctx.strokeStyle = isDark ? 'rgba(192, 132, 252, 0.35)' : 'rgba(147, 51, 234, 0.3)';
+          ctx.lineWidth = 1.2;
+          for (let ax = x0 % arrowSpacing; ax < width; ax += arrowSpacing) {
+            for (let ay = y0 % arrowSpacing; ay < height; ay += arrowSpacing) {
+              ctx.beginPath();
+              ctx.moveTo(ax, ay - 6);
+              ctx.lineTo(ax, ay + 6);
+              ctx.lineTo(ax - 3, ay + 2);
+              ctx.moveTo(ax, ay + 6);
+              ctx.lineTo(ax + 3, ay + 2);
+              ctx.stroke();
+            }
+          }
+        } else if (forceCategory === 'spring') {
+          // B. Spring: Concentric Circular Equipotential Rings r = const (U = 1/2 k r^2)
+          const radii = [1.5, 3.0, 4.5, 6.0, 7.5, 9.0];
+          radii.forEach((rPhys) => {
+            const rPx = rPhys * scale;
+            const uVal = 0.5 * params.springK * rPhys * rPhys;
+            ctx.strokeStyle = isDark ? 'rgba(168, 85, 247, 0.45)' : 'rgba(147, 51, 234, 0.4)';
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([6, 5]);
+            ctx.beginPath();
+            ctx.arc(x0, y0, rPx, 0, 2 * Math.PI);
+            ctx.stroke();
+
+            // Ring label at 45 degrees
+            const ang = Math.PI / 4;
+            const lx = x0 + rPx * Math.cos(ang);
+            const ly = y0 - rPx * Math.sin(ang);
+            ctx.fillStyle = isDark ? 'rgba(216, 180, 254, 0.95)' : 'rgba(107, 33, 168, 0.95)';
+            ctx.font = 'bold 10px JetBrains Mono, monospace';
+            ctx.fillText(`U = ${uVal.toFixed(0)} J`, lx + 4, ly);
+          });
+        } else if (forceCategory === 'coulomb' || forceCategory === 'electrostatic') {
+          // C. Coulomb: Concentric Circular Equipotential Rings around central charge
+          const q1 = params.coulombQ1 ?? 5;
+          const q2 = params.coulombQ2 ?? 1;
+          const ke = params.coulombKe ?? 50;
+          const radii = [1.5, 2.5, 4.0, 6.0, 8.5];
+          radii.forEach((rPhys) => {
+            const rPx = rPhys * scale;
+            const uVal = (ke * q1 * q2) / rPhys;
+            ctx.strokeStyle = isDark ? 'rgba(168, 85, 247, 0.45)' : 'rgba(147, 51, 234, 0.4)';
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([6, 5]);
+            ctx.beginPath();
+            ctx.arc(x0, y0, rPx, 0, 2 * Math.PI);
+            ctx.stroke();
+
+            const ang = Math.PI / 4;
+            const lx = x0 + rPx * Math.cos(ang);
+            const ly = y0 - rPx * Math.sin(ang);
+            ctx.fillStyle = isDark ? 'rgba(216, 180, 254, 0.95)' : 'rgba(107, 33, 168, 0.95)';
+            ctx.font = 'bold 10px JetBrains Mono, monospace';
+            ctx.fillText(`U = ${uVal.toFixed(0)} J`, lx + 4, ly);
+          });
+        } else if (forceCategory === 'buoyant') {
+          // D. Buoyant: Horizontal Isolines
+          const rho = params.fluidDensity ?? 1000;
+          const vSub = params.submergedVolume ?? 0.01;
+          const g = params.gravity ?? 9.8;
+          const fBuoyant = rho * vSub * g * 0.1;
+          const yLevels = [-6, -3, 0, 3, 6];
+          yLevels.forEach((yPhys) => {
+            const cy = y0 - yPhys * scale;
+            const uVal = -fBuoyant * yPhys;
+            ctx.strokeStyle = isDark ? 'rgba(168, 85, 247, 0.45)' : 'rgba(147, 51, 234, 0.4)';
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([6, 5]);
+            ctx.beginPath();
+            ctx.moveTo(0, cy);
+            ctx.lineTo(width, cy);
+            ctx.stroke();
+
+            ctx.fillStyle = isDark ? 'rgba(216, 180, 254, 0.95)' : 'rgba(107, 33, 168, 0.95)';
+            ctx.font = 'bold 10px JetBrains Mono, monospace';
+            ctx.fillText(`U = ${uVal.toFixed(0)} J`, 16, cy - 4);
+          });
         }
+
+        // Equipotential Legend badge on canvas top right
+        ctx.setLineDash([]);
+        const legendTxt =
+          lang === 'bn'
+            ? '⚡ সমবিভব রেখাচিত্র (Equipotential: U = ধ্রুবক • F⃗ = -∇U)'
+            : '⚡ Equipotential Isolines: U = const • F⃗ = -∇U';
+        ctx.font = 'bold 10px JetBrains Mono, monospace';
+        const txtWidth = ctx.measureText(legendTxt).width;
+        const lx = width - txtWidth - 24;
+        const ly = 20;
+        ctx.fillStyle = isDark ? 'rgba(15, 23, 42, 0.9)' : 'rgba(255, 255, 255, 0.92)';
+        ctx.strokeStyle = isDark ? 'rgba(168, 85, 247, 0.6)' : 'rgba(147, 51, 234, 0.5)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.roundRect(lx - 8, ly - 12, txtWidth + 16, 20, 6);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = isDark ? '#d8b4fe' : '#7e22ce';
+        ctx.fillText(legendTxt, lx, ly + 2);
+
+        ctx.restore();
+      } else {
+        // Non-conservative forces (Friction, Viscous, Drag, etc.)
+        // Scalar potential U is strictly undefined (curl != 0).
+        ctx.save();
+        const bannerW = Math.min(width - 32, 540);
+        const bannerH = 48;
+        const bx = (width - bannerW) / 2;
+        const by = 20;
+
+        ctx.fillStyle = isDark ? 'rgba(15, 23, 42, 0.94)' : 'rgba(255, 255, 255, 0.96)';
+        ctx.strokeStyle = '#f59e0b';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.roundRect(bx, by, bannerW, bannerH, 10);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = isDark ? '#fbbf24' : '#b45309';
+        ctx.font = 'bold 11px Plus Jakarta Sans, sans-serif';
+        ctx.fillText(
+          lang === 'bn'
+            ? '⚠️ অসংরক্ষণশীল বল: কোনো বিভব শক্তি (U) সংজ্ঞায়িত নেই (∇ × F⃗ ≠ 0)'
+            : '⚠️ Non-Conservative Force: No scalar potential U exists (∇ × F⃗ ≠ 0)',
+          bx + 14,
+          by + 18
+        );
+
+        ctx.fillStyle = isDark ? '#94a3b8' : '#475569';
+        ctx.font = '10px JetBrains Mono, monospace';
+        ctx.fillText(
+          lang === 'bn'
+            ? 'কাজ পথের ওপর নির্ভরশীল (∮ F·dr ≠ 0); যান্ত্রিক শক্তি তাপে (Thermal Loss) অপচয় হয়।'
+            : 'Work is path-dependent (∮ F·dr ≠ 0); mechanical energy is dissipated as heat.',
+          bx + 14,
+          by + 34
+        );
+        ctx.restore();
       }
     }
 
@@ -469,11 +640,65 @@ const PhysicsCanvasComponent: React.FC<PhysicsCanvasProps> = ({
           : 'bg-white border-slate-300 text-slate-900 shadow-lg'
       }`}
     >
-      {/* Canvas Top Bar: Vector Legend */}
-      <div className={`flex items-center justify-between border-b pb-2 ${isDark ? 'border-slate-800' : 'border-slate-200'}`}>
-        <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700 dark:text-slate-300">
-          <Sparkles className="w-4 h-4 text-cyan-600 dark:text-cyan-400 shrink-0" />
-          <span className="font-extrabold">{lang === 'bn' ? 'ক্যানভাস সিমুলেশন' : 'Simulation Stage'}</span>
+      {/* Canvas Top Bar: Play, Step, Reset, Large Canvas Toggle and Vector Legend */}
+      <div className={`flex flex-wrap items-center justify-between gap-2.5 border-b pb-2.5 ${isDark ? 'border-slate-800' : 'border-slate-200'}`}>
+        <div className="flex items-center flex-wrap gap-2">
+          {/* Play / Pause Button */}
+          <button
+            onClick={() => setIsPlaying(!isPlaying)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all shadow-sm active:scale-95 ${
+              isPlaying
+                ? 'bg-amber-500/20 text-amber-800 dark:text-amber-300 border border-amber-500/40 hover:bg-amber-500/30'
+                : 'bg-gradient-to-r from-cyan-500 to-emerald-500 text-slate-950 font-extrabold hover:brightness-110'
+            }`}
+          >
+            {isPlaying ? <Pause className="w-3.5 h-3.5 fill-amber-500" /> : <Play className="w-3.5 h-3.5 fill-slate-950" />}
+            <span>{isPlaying ? (lang === 'bn' ? 'পজ' : 'Pause') : lang === 'bn' ? 'চালু করুন' : 'Simulate'}</span>
+          </button>
+
+          {/* Step Forward */}
+          <button
+            onClick={onStepForward}
+            className={`p-1.5 border rounded-xl transition-all active:scale-95 ${
+              isDark
+                ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
+                : 'bg-slate-100 hover:bg-slate-200 text-slate-800 border-slate-300'
+            }`}
+            title="Step Forward"
+          >
+            <SkipForward className="w-3.5 h-3.5 text-cyan-500" />
+          </button>
+
+          {/* Reset Motion */}
+          <button
+            onClick={onResetAnim}
+            className={`p-1.5 border rounded-xl transition-all active:scale-95 ${
+              isDark
+                ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
+                : 'bg-slate-100 hover:bg-slate-200 text-slate-800 border-slate-300'
+            }`}
+            title="Reset Motion"
+          >
+            <RotateCcw className="w-3.5 h-3.5 text-amber-500" />
+          </button>
+
+          {/* Large Canvas / Focus View Toggle Button */}
+          {onToggleLargeCanvas && (
+            <button
+              onClick={onToggleLargeCanvas}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-extrabold border transition-all active:scale-95 ${
+                isLargeCanvas
+                  ? 'bg-cyan-500 text-slate-950 border-cyan-400 shadow-md'
+                  : isDark
+                  ? 'bg-slate-800 hover:bg-slate-700 text-cyan-300 border-slate-700'
+                  : 'bg-slate-100 hover:bg-slate-200 text-cyan-900 border-slate-300'
+              }`}
+              title={isLargeCanvas ? 'Exit Large Canvas' : 'View in Large Canvas Mode'}
+            >
+              {isLargeCanvas ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5 text-cyan-500" />}
+              <span>{isLargeCanvas ? (lang === 'bn' ? 'স্বাভাবিক ভিউ' : 'Normal') : (lang === 'bn' ? 'বড় ক্যানভাস' : 'Large Canvas')}</span>
+            </button>
+          )}
         </div>
 
         {/* Vector Legend */}
@@ -493,8 +718,12 @@ const PhysicsCanvasComponent: React.FC<PhysicsCanvasProps> = ({
         </div>
       </div>
 
-      {/* Main Canvas View (Tall square-like aspect ratio) */}
-      <div className={`relative w-full h-[480px] sm:h-[540px] lg:h-[580px] rounded-xl overflow-hidden border shadow-inner ${
+      {/* Main Canvas View (Expands to large height when in large canvas mode) */}
+      <div className={`relative w-full ${
+        isLargeCanvas
+          ? 'h-[600px] sm:h-[660px] lg:h-[720px]'
+          : 'h-[480px] sm:h-[540px] lg:h-[580px]'
+      } rounded-xl overflow-hidden border shadow-inner transition-all duration-300 ${
         isDark ? 'bg-slate-950/90 border-slate-800' : 'bg-slate-50 border-slate-300'
       }`}>
         <canvas
@@ -514,45 +743,52 @@ const PhysicsCanvasComponent: React.FC<PhysicsCanvasProps> = ({
             ? `বিন্দু A(${pointA.x.toFixed(1)}, ${pointA.y.toFixed(1)}) → B(${pointB.x.toFixed(1)}, ${pointB.y.toFixed(1)}) • C(${pointC.x.toFixed(1)}, ${pointC.y.toFixed(1)}) (A, B ও C ড্র্যাগ করে পথ পরিবর্তন করুন)`
             : `Waypoints: A(${pointA.x.toFixed(1)}, ${pointA.y.toFixed(1)}) → B(${pointB.x.toFixed(1)}, ${pointB.y.toFixed(1)}) • Drag A, B & C handles to reshape curve`}
         </div>
+
+        {/* Floating Live Telemetry HUD inside canvas (Especially rich and helpful in Large Canvas Mode) */}
+        {isLargeCanvas && (
+          <div className={`absolute bottom-3 left-3 right-3 sm:right-auto border rounded-xl p-2.5 text-xs font-mono shadow-2xl backdrop-blur-md flex flex-wrap items-center gap-3 animate-fade-in ${
+            isDark ? 'bg-slate-900/95 border-slate-700 text-slate-200' : 'bg-white/95 border-slate-300 text-slate-900'
+          }`}>
+            <div className="flex items-center gap-1.5 font-bold">
+              <span className="text-cyan-600 dark:text-cyan-400">W (Work):</span>
+              <span className="font-extrabold">{telemetry.workDone.toFixed(1)} J</span>
+            </div>
+            <div className="w-px h-3.5 bg-slate-700 hidden sm:block" />
+            <div className="flex items-center gap-1.5 font-bold">
+              <span className="text-emerald-600 dark:text-emerald-400">Ek (Kinetic):</span>
+              <span className="font-extrabold">{telemetry.kineticEnergy.toFixed(1)} J</span>
+            </div>
+            <div className="w-px h-3.5 bg-slate-700 hidden sm:block" />
+            <div className="flex items-center gap-1.5 font-bold">
+              <span className="text-purple-600 dark:text-purple-400">Ep (Potential):</span>
+              <span className="font-extrabold">{telemetry.potentialEnergy.toFixed(1)} J</span>
+            </div>
+            <div className="w-px h-3.5 bg-slate-700 hidden sm:block" />
+            <div className="flex items-center gap-1.5 font-bold">
+              <span className="text-amber-600 dark:text-amber-400">Speed |v|:</span>
+              <span className="font-extrabold">{Math.hypot(telemetry.vel.x, telemetry.vel.y).toFixed(1)} m/s</span>
+            </div>
+            {telemetry.thermalEnergy > 0.01 && (
+              <>
+                <div className="w-px h-3.5 bg-slate-700 hidden sm:block" />
+                <div className="flex items-center gap-1.5 font-bold text-rose-600 dark:text-rose-400">
+                  <span>Q (Thermal):</span>
+                  <span className="font-extrabold">{telemetry.thermalEnergy.toFixed(1)} J</span>
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
-      {/* Canvas Animation Controls Bar */}
-      <div className={`flex flex-col sm:flex-row items-center justify-between gap-3 border rounded-xl p-3 ${
+      {/* Canvas Animation Progress Scrubber */}
+      <div className={`flex items-center justify-between gap-3 border rounded-xl px-3.5 py-2 ${
         isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-slate-100 border-slate-300'
       }`}>
-        {/* Play / Pause / Step Controls */}
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setIsPlaying(!isPlaying)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-extrabold transition-all shadow-md active:scale-95 ${
-              isPlaying
-                ? 'bg-amber-500/20 text-amber-800 dark:text-amber-300 border border-amber-500/40 hover:bg-amber-500/30'
-                : 'bg-gradient-to-r from-cyan-500 to-emerald-500 text-slate-950 font-extrabold hover:brightness-110'
-            }`}
-          >
-            {isPlaying ? <Pause className="w-4 h-4 fill-amber-500" /> : <Play className="w-4 h-4 fill-slate-950" />}
-            <span>{isPlaying ? (lang === 'bn' ? 'পজ' : 'Pause') : lang === 'bn' ? 'চালু করুন' : 'Simulate'}</span>
-          </button>
-
-          <button
-            onClick={onStepForward}
-            className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl transition-all active:scale-95"
-            title="Step Forward"
-          >
-            <SkipForward className="w-4 h-4 text-cyan-400" />
-          </button>
-
-          <button
-            onClick={onResetAnim}
-            className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl transition-all active:scale-95"
-            title="Reset Motion"
-          >
-            <RotateCcw className="w-4 h-4 text-amber-400" />
-          </button>
-        </div>
-
-        {/* Scrubber Progress Slider */}
-        <div className="flex items-center gap-3 w-full sm:w-auto flex-1 max-w-md px-2">
+        <span className={`text-xs font-mono font-bold whitespace-nowrap ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
+          {lang === 'bn' ? 'গতিপথ স্ক্রাবার:' : 'Path Progress:'}
+        </span>
+        <div className="flex items-center gap-3 w-full flex-1 px-1">
           <span className="text-[11px] text-slate-400 font-mono">0%</span>
           <input
             type="range"
@@ -566,7 +802,7 @@ const PhysicsCanvasComponent: React.FC<PhysicsCanvasProps> = ({
             }}
             className="w-full accent-cyan-400 bg-slate-800 rounded-lg h-2 cursor-pointer"
           />
-          <span className="text-[11px] text-cyan-400 font-mono font-bold">
+          <span className="text-[11px] text-cyan-400 font-mono font-bold w-10 text-right">
             {(pathProgress * 100).toFixed(0)}%
           </span>
         </div>

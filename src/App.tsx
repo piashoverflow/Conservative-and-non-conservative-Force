@@ -4,8 +4,7 @@ import { ControlPanel } from './components/ControlPanel';
 import { PhysicsCanvas } from './components/PhysicsCanvas';
 import { EnergyBarChart } from './components/EnergyBarChart';
 import { TelemetryPanel } from './components/TelemetryPanel';
-import { MathProofSolver } from './components/MathProofSolver';
-import { HelpModal } from './components/HelpModal';
+import { MathProofModal } from './components/MathProofModal';
 import {
   ForceCategory,
   Language,
@@ -31,7 +30,8 @@ export default function App() {
 
   const [activePresetId, setActivePresetId] = useState<string>('gravity_hills');
   const [forceCategory, setForceCategory] = useState<ForceCategory>('gravity');
-  const [isHelpOpen, setIsHelpOpen] = useState<boolean>(false);
+  const [isMathProofOpen, setIsMathProofOpen] = useState<boolean>(false);
+  const [isLargeCanvas, setIsLargeCanvas] = useState<boolean>(false);
   const [soundEnabled, setSoundEnabled] = useState<boolean>(false);
 
   // Motion Waypoints A, B, and C (Control handle)
@@ -282,15 +282,14 @@ export default function App() {
         activePresetId={activePresetId}
         onSelectPreset={handleSelectPreset}
         onReset={handleReset}
-        onOpenHelp={() => setIsHelpOpen(true)}
         soundEnabled={soundEnabled}
         setSoundEnabled={setSoundEnabled}
       />
 
       {/* 2. Main Dashboard Grid */}
       <main className="w-full px-2 sm:px-4 md:px-5 py-4 flex-1 grid grid-cols-1 lg:grid-cols-12 gap-4 md:gap-5">
-        {/* Left Column: Control Panel & Preset Selectors (Narrowed sidebar) */}
-        <div className="lg:col-span-3 xl:col-span-2 flex flex-col gap-4">
+        {/* Left Column: Control Panel & Preset Selectors */}
+        <div className={`${isLargeCanvas ? 'hidden xl:block xl:col-span-3' : 'lg:col-span-4 xl:col-span-3'} flex flex-col gap-4`}>
           <ControlPanel
             lang={lang}
             forceCategory={forceCategory}
@@ -307,8 +306,8 @@ export default function App() {
           />
         </div>
 
-        {/* Center Column: Physics Canvas & Energy Meter (Enlarged simulation stage) */}
-        <div className="lg:col-span-6 xl:col-span-7 flex flex-col gap-4">
+        {/* Center Column: Physics Canvas & Energy Meter */}
+        <div className={`${isLargeCanvas ? 'col-span-12 xl:col-span-9' : 'lg:col-span-8 xl:col-span-6'} flex flex-col gap-4`}>
           <PhysicsCanvas
             lang={lang}
             forceCategory={forceCategory}
@@ -327,6 +326,8 @@ export default function App() {
             setPointB={setPointB}
             pointC={pointC}
             setPointC={setPointC}
+            isLargeCanvas={isLargeCanvas}
+            onToggleLargeCanvas={() => setIsLargeCanvas((prev) => !prev)}
             theme={theme}
           />
 
@@ -340,21 +341,14 @@ export default function App() {
           />
         </div>
 
-        {/* Right Sidebar Column: Live Telemetry & Math Proof Solver */}
-        <div className="lg:col-span-3 xl:col-span-3 flex flex-col gap-4">
+        {/* Right Sidebar Column: Live Telemetry (with trigger to open step-by-step math proof) */}
+        <div className={`${isLargeCanvas ? 'col-span-12 xl:col-span-12 grid grid-cols-1 md:grid-cols-2 gap-4' : 'lg:col-span-12 xl:col-span-3'} flex flex-col gap-4`}>
           <TelemetryPanel
             lang={lang}
             forceCategory={forceCategory}
             telemetry={telemetry}
             forceAnalysis={forceAnalysis}
-            theme={theme}
-          />
-
-          <MathProofSolver
-            lang={lang}
-            forceCategory={forceCategory}
-            params={params}
-            forceAnalysis={forceAnalysis}
+            onOpenMathProof={() => setIsMathProofOpen(true)}
             theme={theme}
           />
         </div>
@@ -373,11 +367,15 @@ export default function App() {
         </p>
       </footer>
 
-      {/* 4. Help & Tutorial Modal */}
-      <HelpModal
-        isOpen={isHelpOpen}
-        onClose={() => setIsHelpOpen(false)}
+      {/* 4. Optional Step-by-Step Math Proof Modal */}
+      <MathProofModal
+        isOpen={isMathProofOpen}
+        onClose={() => setIsMathProofOpen(false)}
         lang={lang}
+        forceCategory={forceCategory}
+        params={params}
+        forceAnalysis={forceAnalysis}
+        theme={theme}
       />
     </div>
   );

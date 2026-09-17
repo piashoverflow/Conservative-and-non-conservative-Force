@@ -2,12 +2,10 @@ import React from 'react';
 import {
   Atom,
   RotateCcw,
-  HelpCircle,
   Sparkles,
   Volume2,
   VolumeX,
   Languages,
-  BookOpen,
   Sun,
   Moon,
 } from 'lucide-react';
@@ -22,7 +20,6 @@ interface HeaderProps {
   activePresetId: string;
   onSelectPreset: (preset: PresetScenario) => void;
   onReset: () => void;
-  onOpenHelp: () => void;
   soundEnabled: boolean;
   setSoundEnabled: (enabled: boolean) => void;
 }
@@ -35,7 +32,6 @@ const HeaderComponent: React.FC<HeaderProps> = ({
   activePresetId,
   onSelectPreset,
   onReset,
-  onOpenHelp,
   soundEnabled,
   setSoundEnabled,
 }) => {
@@ -68,16 +64,6 @@ const HeaderComponent: React.FC<HeaderProps> = ({
                   ? 'সংরক্ষণশীল ও অসংরক্ষণশীল বল সিমুলেটর'
                   : 'Conservative vs. Non-Conservative Forces Lab'}
               </h1>
-              <span
-                className={`hidden sm:inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full border ${
-                  isDark
-                    ? 'bg-cyan-500/10 text-cyan-300 border-cyan-500/30'
-                    : 'bg-cyan-100 text-cyan-900 border-cyan-300'
-                }`}
-              >
-                <BookOpen className="w-3 h-3 text-cyan-600 dark:text-cyan-400" />
-                Physics Lab - Work, Energy & Power
-              </span>
             </div>
             <p
               className={`text-xs flex items-center gap-1.5 font-semibold ${
@@ -155,15 +141,6 @@ const HeaderComponent: React.FC<HeaderProps> = ({
           >
             <RotateCcw className="w-3.5 h-3.5 text-amber-500" />
             <span>{lang === 'bn' ? 'রিসেট' : 'Reset'}</span>
-          </button>
-
-          {/* Help / Tutorial Button */}
-          <button
-            onClick={onOpenHelp}
-            className="flex items-center gap-1.5 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-800 dark:text-cyan-300 border border-cyan-500/40 rounded-xl px-3 py-1.5 font-bold transition-all shadow-sm active:scale-95"
-          >
-            <HelpCircle className="w-3.5 h-3.5" />
-            <span>{lang === 'bn' ? 'টিউটোরিয়াল' : 'Lab Guide'}</span>
           </button>
 
           {/* UDVASH Brand Badge (Far Right) */}
